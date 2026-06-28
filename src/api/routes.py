@@ -159,6 +159,65 @@ async def get_report_content(task_id: str):
     }
 
 
+# ====== 报告导出 ======
+
+from pathlib import Path as FilePath
+from fastapi.responses import FileResponse
+
+
+@router.get("/api/reports/{task_id}/export")
+async def export_report(task_id: str, format: str = "pdf"):
+    """导出报告为 PDF/Word。
+
+    Args:
+        task_id: 任务ID
+        format: 导出格式 pdf | docx
+    """
+    if format not in ("pdf", "docx"):
+        raise HTTPException(400, "不支持的导出格式，可选: pdf, docx")
+
+    crud = ReportCRUD()
+    report = await crud.get_by_task_id(task_id)
+    if report is None:
+        raise HTTPException(404, "报告不存在")
+    if not report.content_md:
+        raise HTTPException(400, "报告内容为空")
+
+    # 输出目录
+    export_dir = FilePath("outputs/exports")
+    export_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_name = "".join(c for c in report.topic[:30] if c.isalnum() or c in "._- ") or "report"
+    safe_name = safe_name.strip().replace(" ", "_")
+
+    if format == "pdf":
+        from src.generator.exporter import md_to_pdf
+
+        output_path = export_dir / f"{safe_name}_report.pdf"
+        try:
+            md_to_pdf(report.content_md, output_path, title=report.topic)
+        except OSError as e:
+            raise HTTPException(
+                500,
+                detail=f"PDF 导出失败: {e}。Windows 需安装 GTK3 运行时，详见 weasyprint 文档。",
+            )
+        media_type = "application/pdf"
+        filename = f"{safe_name}_report.pdf"
+    else:
+        from src.generator.exporter import md_to_docx
+
+        output_path = export_dir / f"{safe_name}_report.docx"
+        md_to_docx(report.content_md, output_path, title=report.topic)
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        filename = f"{safe_name}_report.docx"
+
+    return FileResponse(
+        path=str(output_path),
+        media_type=media_type,
+        filename=filename,
+    )
+
+
 # ====== 内部执行逻辑 ======
 
 _NODE_PROGRESS: dict[str, tuple[float, str]] = {

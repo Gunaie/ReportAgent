@@ -163,6 +163,11 @@ async function renderReport(taskId) {
         if (r.summary) html += `<p><strong>📝 摘要：</strong>${escapeHtml(r.summary)}</p>`;
         html += '<hr>';
         html += mdToHtml(r.content || '*暂无内容*');
+        // 导出按钮
+        html += `<div style="margin-top:20px;display:flex;gap:8px;flex-wrap:wrap">
+            <a href="/api/reports/${taskId}/export?format=pdf" download class="export-btn pdf">📄 下载 PDF</a>
+            <a href="/api/reports/${taskId}/export?format=docx" download class="export-btn docx">📝 下载 Word</a>
+        </div>`;
         html += '</div>';
 
         const bubble = addBubble('assistant', '', 'report');
