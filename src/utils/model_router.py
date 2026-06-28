@@ -19,6 +19,7 @@ _MODEL_MAP = {
 
 # Agent 名称 → 任务层级映射
 _AGENT_TIER = {
+    "clarify": TaskTier.SIMPLE,
     "search": TaskTier.SIMPLE,
     "trend": TaskTier.SIMPLE,
     "competition": TaskTier.COMPLEX,

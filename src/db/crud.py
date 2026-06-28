@@ -6,7 +6,7 @@ from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 
-from src.db.models import Report, Task, WatchlistItem
+from src.db.models import Report, Task, Conversation, WatchlistItem
 from src.db.engine import get_session
 
 
@@ -192,6 +192,29 @@ class TaskCRUD:
             if stale:
                 logger.info(f"启动恢复: {len(stale)} 个运行中任务已标记为失败")
             return len(stale)
+
+
+class ConversationCRUD:
+    """对话记录 CRUD。"""
+
+    async def add(self, task_id: str, role: str, content: str) -> Conversation:
+        """添加一条对话记录。"""
+        conv = Conversation(task_id=task_id, role=role, content=content)
+        async with await get_session() as session:
+            session.add(conv)
+            await session.commit()
+            await session.refresh(conv)
+        return conv
+
+    async def get_history(self, task_id: str) -> list[Conversation]:
+        """获取任务的所有对话历史（按时间正序）。"""
+        async with await get_session() as session:
+            result = await session.execute(
+                select(Conversation)
+                .where(Conversation.task_id == task_id)
+                .order_by(Conversation.created_at.asc())
+            )
+            return list(result.scalars().all())
 
 
 class WatchlistCRUD:

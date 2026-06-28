@@ -8,6 +8,10 @@ class ResearchState(dict):
 
     字段说明:
         topic: 用户输入的研究主题
+        refined_topic: 澄清后的精确主题
+        conversation_history: 对话记录 [{role, content}]
+        need_clarify: 是否需要澄清
+        clarify_question: AI 提出的澄清问题
         search_results: 搜索返回的摘要列表 [{title, url, content}]
         sources: 抓取的完整网页内容 [{url, title, content}]
         trend_analysis: 趋势分析 Agent 输出
@@ -18,6 +22,10 @@ class ResearchState(dict):
     """
 
     topic: str
+    refined_topic: str
+    conversation_history: list[dict]
+    need_clarify: bool
+    clarify_question: str
     search_results: list[dict]
     sources: list[dict]
     trend_analysis: str
@@ -26,9 +34,13 @@ class ResearchState(dict):
     final_report: str
     error: str | None
 
-    def __init__(self, topic: str = ""):
+    def __init__(self, topic: str = "", conversation_history: list[dict] | None = None):
         super().__init__(
             topic=topic,
+            refined_topic=topic,
+            conversation_history=conversation_history or [],
+            need_clarify=False,
+            clarify_question="",
             search_results=[],
             sources=[],
             trend_analysis="",

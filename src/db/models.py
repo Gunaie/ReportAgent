@@ -54,6 +54,21 @@ class Task(Base):
         return f"<Task(task_id={self.task_id}, status={self.status})>"
 
 
+class Conversation(Base):
+    """对话记录表 — 存储研究任务的多轮对话历史。"""
+
+    __tablename__ = "conversations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    task_id = Column(String(64), nullable=False, index=True, comment="关联任务UUID")
+    role = Column(String(16), nullable=False, comment="user | assistant")
+    content = Column(Text, nullable=False, comment="对话内容")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+
+    def __repr__(self) -> str:
+        return f"<Conversation(task={self.task_id}, role={self.role})>"
+
+
 class WatchlistItem(Base):
     """自选股表。"""
 

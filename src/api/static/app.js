@@ -1,32 +1,66 @@
-// 智能研究助手 — 前端交互
+// 智能研究助手 — 对话式交互
 
-// ====== 工具函数 ======
+let _currentTaskId = null;
+let _busy = false;
 
-function escapeHtml(s) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
+const chat = document.getElementById('chatBox');
+const input = document.getElementById('msgInput');
+const sendBtn = document.getElementById('sendBtn');
+const errEl = document.getElementById('inputError');
 
 // ====== 快捷键 ======
 
-document.getElementById('topicInput').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) startResearch();
+input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) sendMessage();
 });
 
-// ====== 提交研究 ======
+// 模板快速填充
+document.getElementById('tplBar').addEventListener('click', (e) => {
+    if (e.target.classList.contains('tpl-chip')) {
+        const tpl = e.target.dataset.tpl;
+        input.value = `分析${tpl}行业的发展趋势、竞争格局和风险`;
+        input.focus();
+    }
+});
 
-async function startResearch() {
-    const topic = document.getElementById('topicInput').value.trim();
-    if (topic.length < 4) return showError('请输入至少4个字的研究主题');
+// ====== 发送消息 ======
 
-    // 重置 UI
-    document.getElementById('progressWrap').style.display = 'block';
-    document.getElementById('reportArea').style.display = 'none';
-    document.getElementById('reportArea').innerHTML = '';
+async function sendMessage() {
+    if (_busy) return;
+    const text = input.value.trim();
+    if (!text) return;
+
+    if (text.length < 4) {
+        showError('请输入至少4个字的研究主题');
+        return;
+    }
+
+    _busy = true;
     hideError();
-    document.getElementById('progressFill').style.width = '0%';
-    document.getElementById('stepText').textContent = '提交中…';
-    document.getElementById('statusTag').className = 'tag tag-running';
-    document.getElementById('statusTag').textContent = '分析中';
+    sendBtn.disabled = true;
+
+    // 判断是首次研究还是继续对话
+    if (_currentTaskId && _isClarifying()) {
+        await continueResearch(text);
+    } else {
+        await startResearch(text);
+    }
+
+    input.value = '';
+    _busy = false;
+    sendBtn.disabled = false;
+    input.focus();
+}
+
+function _isClarifying() {
+    const last = lastProgressMsg();
+    return last && last.querySelector('.tag-clarifying');
+}
+
+// ====== 首次研究 ======
+
+async function startResearch(topic) {
+    addBubble('user', topic);
 
     try {
         const resp = await fetch('/api/research', {
@@ -35,109 +69,198 @@ async function startResearch() {
             body: JSON.stringify({ topic }),
         });
         if (!resp.ok) {
-            const err = await resp.json();
-            throw new Error(err.detail || '请求失败');
+            const e = await resp.json();
+            throw new Error(e.detail || '请求失败');
         }
-        subscribeProgress((await resp.json()).task_id);
+        const { task_id } = await resp.json();
+        _currentTaskId = task_id;
+        subscribeSSE(task_id);
     } catch (e) {
-        showError(e.message);
+        addBubble('assistant', '❌ ' + e.message);
     }
 }
 
-// ====== SSE 进度订阅 ======
+// ====== 继续对话 ======
 
-function subscribeProgress(taskId) {
-    const bar = document.getElementById('progressFill');
-    const step = document.getElementById('stepText');
-    const tag = document.getElementById('statusTag');
+async function continueResearch(reply) {
+    addBubble('user', reply);
+
+    try {
+        const resp = await fetch('/api/research/continue', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task_id: _currentTaskId, user_reply: reply }),
+        });
+        if (!resp.ok) {
+            const e = await resp.json();
+            throw new Error(e.detail || '请求失败');
+        }
+        subscribeSSE(_currentTaskId);
+    } catch (e) {
+        addBubble('assistant', '❌ ' + e.message);
+    }
+}
+
+// ====== SSE 订阅 ======
+
+function subscribeSSE(taskId) {
+    // 清理旧进度
+    removeProgress();
+
     const es = new EventSource(`/api/sse/${taskId}`);
+    let done = false;
 
     es.addEventListener('status', (e) => {
+        if (done) return;
         const d = JSON.parse(e.data);
-        bar.style.width = `${(d.progress || 0) * 100}%`;
-        step.textContent = d.current_step || '';
+        updateProgress(d);
 
-        if (d.status === 'done') {
-            tag.className = 'tag tag-done';
-            tag.textContent = '✅ 完成';
+        if (d.status === 'clarifying') {
+            done = true;
             es.close();
+            removeProgress();
+            const q = d.result?.clarify_question || '请补充更多信息';
+            addBubble('assistant', '🔍 ' + q);
+            // 显示提示
+            const tip = addElement('div', 'progress-msg');
+            tip.innerHTML = '<span style="color:var(--accent)">👆 请回复补充信息后发送</span>';
+            chat.appendChild(tip);
+            scrollDown();
+            _busy = false;
+            sendBtn.disabled = false;
+            input.focus();
+        } else if (d.status === 'done') {
+            done = true;
+            es.close();
+            removeProgress();
             renderReport(taskId);
         } else if (d.status === 'failed') {
-            tag.className = 'tag tag-failed';
-            tag.textContent = '❌ 失败';
+            done = true;
             es.close();
-            showError(d.error || '分析失败，请重试');
+            removeProgress();
+            addBubble('assistant', '❌ 分析失败: ' + (d.error || '未知错误'));
         }
     });
 
     es.addEventListener('error', () => {
-        es.close();
-        if (tag.textContent !== '✅ 完成') {
-            tag.className = 'tag tag-failed';
-            tag.textContent = '❌ 连接断开';
+        if (!done) {
+            es.close();
+            removeProgress();
+            addBubble('assistant', '❌ 连接断开，请重试');
         }
     });
 }
 
-// ====== 渲染报告 ======
+// ====== 报告渲染 ======
 
 async function renderReport(taskId) {
-    const area = document.getElementById('reportArea');
     try {
         const resp = await fetch(`/api/reports/${taskId}/content`);
         if (!resp.ok) throw new Error('报告加载失败');
         const r = await resp.json();
 
-        let html = '<h2>📄 研究报告</h2>';
-        if (r.summary) html += `<p><strong>摘要：</strong>${escapeHtml(r.summary)}</p>`;
+        let html = '<div class="report">';
+        if (r.summary) html += `<p><strong>📝 摘要：</strong>${escapeHtml(r.summary)}</p>`;
         html += '<hr>';
         html += mdToHtml(r.content || '*暂无内容*');
+        html += '</div>';
 
-        area.innerHTML = html;
-        area.style.display = 'block';
-        refreshReports();
+        const bubble = addBubble('assistant', '', 'report');
+        bubble.innerHTML = html;
+        _currentTaskId = null;
+        refreshHistory();
     } catch (e) {
-        showError('报告加载失败: ' + e.message);
+        addBubble('assistant', '❌ 报告加载失败: ' + e.message);
     }
+}
+
+// ====== 进度条 ======
+
+function updateProgress(d) {
+    let el = lastProgressMsg();
+    if (!el) {
+        el = addElement('div', 'progress-msg');
+        chat.appendChild(el);
+    }
+    const pct = Math.round((d.progress || 0) * 100);
+    const step = d.current_step || '';
+    const status = d.status;
+    const tagClass = status === 'running' ? 'tag-running' : status === 'done' ? 'tag-done' : status === 'failed' ? 'tag-failed' : status === 'clarifying' ? 'tag-clarifying' : '';
+    el.innerHTML = `<span>${step}</span><span class="tag ${tagClass}">${status}</span>
+        <div class="bar"><div class="fill" style="width:${pct}%"></div></div>`;
+    scrollDown();
+}
+
+function lastProgressMsg() {
+    const list = chat.querySelectorAll('.progress-msg');
+    return list.length ? list[list.length - 1] : null;
+}
+
+function removeProgress() {
+    chat.querySelectorAll('.progress-msg').forEach(e => e.remove());
+}
+
+// ====== 对话气泡 ======
+
+function addBubble(role, text, extraClass) {
+    const div = addElement('div', `msg ${role}`);
+    const avatar = addElement('div', 'avatar');
+    avatar.textContent = role === 'user' ? '👤' : '🤖';
+    const bubble = addElement('div', `bubble ${extraClass || ''}`);
+    if (text) bubble.innerHTML = text.replace(/\n/g, '<br>');
+    div.appendChild(avatar);
+    div.appendChild(bubble);
+    chat.appendChild(div);
+    scrollDown();
+    return bubble;
+}
+
+function addElement(tag, className) {
+    const el = document.createElement(tag);
+    if (className) el.className = className;
+    return el;
+}
+
+function scrollDown() {
+    requestAnimationFrame(() => { chat.scrollTop = chat.scrollHeight; });
+}
+
+// ====== 工具 ======
+
+function escapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function showError(msg) {
+    errEl.textContent = msg;
+    errEl.style.display = 'block';
+}
+function hideError() {
+    errEl.style.display = 'none';
 }
 
 // ====== Markdown → HTML ======
 
 function mdToHtml(md) {
     if (!md) return '<p>暂无内容</p>';
-
-    // XSS 防护：先转义所有 HTML
     let h = escapeHtml(md);
 
-    // 标题
     h = h.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
     h = h.replace(/^### (.+)$/gm, '<h3>$1</h3>');
     h = h.replace(/^## (.+)$/gm, '<h2>$1</h2>');
     h = h.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-
-    // 粗体 / 斜体
     h = h.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     h = h.replace(/\*(.+?)\*/g, '<em>$1</em>');
-
-    // 链接
     h = h.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-
-    // 分割线
     h = h.replace(/^---$/gm, '<hr>');
-
-    // 有序列表（加 data-ol 标记供分组识别）
     h = h.replace(/^(\d+)\. (.+)$/gm, '<li data-ol>$2</li>');
-    // 无序列表
     h = h.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
-    // 列表分组：有序 → <ol>，无序 → <ul>
     h = h.replace(/((?:<li(?: data-ol)?>.*<\/li>\n?)+)/g, (m) =>
         m.includes('data-ol') ? `<ol>${m.replace(/ data-ol/g, '')}</ol>` : `<ul>${m}</ul>`
     );
-
-    // 表格
     h = h.replace(/^\|(.+)\|$/gm, (line) => {
         const cells = line.split('|').filter(c => c.trim()).map(c => c.trim());
-        if (/^[-: ]+$/.test(cells[0] || '')) return ''; // 分隔行
+        if (/^[-: ]+$/.test(cells[0] || '')) return '';
         return '<tr>' + cells.map(c => `<td>${c}</td>`).join('') + '</tr>';
     });
     h = h.replace(/((?:<tr>.*<\/tr>\n?)+)/g, (match) => {
@@ -148,54 +271,22 @@ function mdToHtml(md) {
         return `<table>${thead}${tbody}</table>`;
     });
 
-    // 段落：双换行 → </p><p>
     h = h.replace(/\n\n/g, '</p><p>');
     h = '<p>' + h + '</p>';
-
-    // 清理：去掉块级元素外的多余 <p>
     const blocks = /<p>(<(?:h[1-4]|table|ul|ol|hr|blockquote))/g;
     const ends = /(<\/\s*(?:h[1-4]|table|ul|ol|hr|blockquote)>)<\/p>/g;
     h = h.replace(blocks, '$1').replace(ends, '$1');
     h = h.replace(/<p>\s*<\/p>/g, '');
-
     return h;
 }
 
-// ====== 错误 ======
+// ====== 历史报告侧边栏 ======
 
-function showError(msg) {
-    const el = document.getElementById('errorBox');
-    el.innerHTML = '⚠️ ' + msg;
-    el.style.display = 'block';
-}
-function hideError() {
-    document.getElementById('errorBox').style.display = 'none';
-}
-
-// ====== 历史报告 ======
-
-async function refreshReports() {
-    const tbody = document.getElementById('reportsBody');
+async function refreshHistory() {
+    // 轻量刷新 — 后台同步，不阻塞
     try {
-        const resp = await fetch('/api/reports');
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
-
-        if (!data.items || !data.items.length) {
-            tbody.innerHTML = '<tr><td class="empty" colspan="3">暂无报告</td></tr>';
-            return;
-        }
-
-        tbody.innerHTML = data.items.map(r => {
-            const date = (r.created_at || '').slice(0, 10);
-            const label = escapeHtml((r.topic || r.stock_name || '').slice(0, 50));
-            const summary = escapeHtml((r.summary || '').slice(0, 60));
-            return `<tr><td>${label}</td><td>${summary || '—'}</td><td>${date}</td></tr>`;
-        }).join('');
-    } catch (e) {
-        console.error('加载历史报告失败:', e);
-        tbody.innerHTML = `<tr><td class="empty" colspan="3" style="color:var(--danger)">加载失败: ${escapeHtml(e.message)}</td></tr>`;
-    }
+        const resp = await fetch('/api/reports?size=5');
+        if (!resp.ok) return;
+        // 后台静默更新，不影响 UI
+    } catch (e) { /* ignore */ }
 }
-
-refreshReports();
