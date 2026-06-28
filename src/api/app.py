@@ -43,8 +43,8 @@ def create_app() -> FastAPI:
         配置完成的 FastAPI 实例
     """
     app = FastAPI(
-        title="智能研报生成助手",
-        description="A股AI深度研报自动生成服务 — 输入股票代码，一键生成专业研报",
+        title="智能研究助手",
+        description="AI 驱动的对话式研究工具 — 输入主题，自动搜索 + 多 Agent 并行分析 → 生成深度研究报告",
         version="0.1.0",
         lifespan=lifespan,
     )
@@ -75,7 +75,7 @@ def create_app() -> FastAPI:
         return {
             "status": "healthy",
             "version": "0.1.0",
-            "service": "report-agent",
+            "service": "智能研究助手",
         }
 
     # === 报告文件静态服务 ===

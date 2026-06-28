@@ -172,4 +172,4 @@ class TestHealthEndpoint:
         resp = client.get("/health")
         assert resp.status_code == 200
         assert resp.json()["status"] == "healthy"
-        assert resp.json()["service"] == "report-agent"
+        assert resp.json()["service"] == "智能研究助手"
