@@ -21,7 +21,6 @@ async def search_agent(state: ResearchState) -> dict:
     try:
         # Step 1: 搜索
         results = await search_web(topic, max_results=5)
-        state["search_results"] = results
 
         # Step 2: 并行抓取 Top 3 网页内容
         top_urls = [r["url"] for r in results[:3] if r.get("url")]
@@ -42,9 +41,9 @@ async def search_agent(state: ResearchState) -> dict:
                         "content": page,
                     })
             logger.info(f"[搜索Agent] 抓取完成: {len(sources)}/{len(top_urls)} 个网页")
-            return {"sources": sources}
+            return {"search_results": results, "sources": sources}
 
-        return {"sources": []}
+        return {"search_results": results, "sources": []}
     except Exception as e:
         logger.error(f"[搜索Agent] 失败: {e}")
         return {"error": str(e), "search_results": [], "sources": []}

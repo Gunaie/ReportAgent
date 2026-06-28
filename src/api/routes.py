@@ -1,5 +1,6 @@
 """REST 路由 — 研究分析/对话/查询/历史。"""
 
+import asyncio
 from loguru import logger
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, field_validator
@@ -169,6 +170,8 @@ _NODE_PROGRESS: dict[str, tuple[float, str]] = {
     "synthesis": (0.92, "报告生成完成"),
 }
 
+_RESEARCH_TIMEOUT = 600  # 单个研究任务总超时（秒）
+
 
 async def _run_research(
     task_id: str,
@@ -187,32 +190,41 @@ async def _run_research(
 
         # 运行图（可能停在 clarify 或走到 synthesis）
         result_state = state
-        async for event in graph.astream(state):
-            for node_name, node_output in event.items():
-                result_state.update(node_output)
 
-                # 检查 clarify 节点：是否需要追问
-                if node_name == "clarify":
-                    if result_state.get("need_clarify"):
-                        question = result_state.get("clarify_question", "请补充更多信息")
-                        refined = result_state.get("refined_topic", topic)
-                        await conv_crud.add(task_id, "assistant", question)
-                        await tm.update(
-                            task_id,
-                            status="clarifying",
-                            progress=0.02,
-                            current_step="等待用户回复",
-                            result={
-                                "clarify_question": question,
-                                "refined_topic": refined,
-                            },
-                        )
-                        return  # 暂停，等待 /research/continue
+        async def _run_graph():
+            nonlocal result_state
+            async for event in graph.astream(state):
+                for node_name, node_output in event.items():
+                    result_state.update(node_output)
 
-                # 普通进度更新
-                if node_name in _NODE_PROGRESS:
-                    prog, desc = _NODE_PROGRESS[node_name]
-                    await tm.update(task_id, progress=prog, current_step=desc)
+                    # 检查 clarify 节点：是否需要追问
+                    if node_name == "clarify":
+                        if result_state.get("need_clarify"):
+                            question = result_state.get("clarify_question", "请补充更多信息")
+                            refined = result_state.get("refined_topic", topic)
+                            await conv_crud.add(task_id, "assistant", question)
+                            await tm.update(
+                                task_id,
+                                status="clarifying",
+                                progress=0.02,
+                                current_step="等待用户回复",
+                                result={
+                                    "clarify_question": question,
+                                    "refined_topic": refined,
+                                },
+                            )
+                            return  # 暂停，等待 /research/continue
+
+                    # 普通进度更新
+                    if node_name in _NODE_PROGRESS:
+                        prog, desc = _NODE_PROGRESS[node_name]
+                        await tm.update(task_id, progress=prog, current_step=desc)
+
+        await asyncio.wait_for(_run_graph(), timeout=_RESEARCH_TIMEOUT)
+
+        # 检查 graph 是否因 clarify 暂停而提前返回
+        if result_state.get("need_clarify"):
+            return  # 已在 _run_graph 内处理
 
         # clarify 通过 → 检查错误
         if result_state.get("error"):
@@ -262,6 +274,9 @@ async def _run_research(
                 "sources": source_urls,
             },
         )
+    except asyncio.TimeoutError:
+        logger.error(f"研究任务超时: {task_id}")
+        await tm.update(task_id, status="failed", error="研究任务超时（10分钟），请尝试缩小研究范围")
     except Exception as e:
         logger.exception(f"研究分析异常: {task_id}")
         await tm.update(task_id, status="failed", error=str(e))

@@ -17,22 +17,28 @@ _MODEL_MAP = {
     TaskTier.COMPLEX: settings.pro_model,
 }
 
-# Agent 名称 → 任务层级映射
-_AGENT_TIER = {
-    "clarify": TaskTier.SIMPLE,
-    "search": TaskTier.SIMPLE,
-    "trend": TaskTier.SIMPLE,
-    "competition": TaskTier.COMPLEX,
-    "risk": TaskTier.SIMPLE,
-    "synthesis": TaskTier.COMPLEX,
-    "default": TaskTier.SIMPLE,
+# Agent 名称 → (任务层级, 超时秒数) 映射
+_AGENT_CONFIG: dict[str, tuple[TaskTier, int]] = {
+    "clarify":     (TaskTier.SIMPLE,  30),
+    "search":      (TaskTier.SIMPLE,  45),
+    "trend":       (TaskTier.SIMPLE,  60),
+    "competition": (TaskTier.COMPLEX, 120),
+    "risk":        (TaskTier.SIMPLE,  60),
+    "synthesis":   (TaskTier.COMPLEX, 120),
+    "default":     (TaskTier.SIMPLE,  60),
 }
 
 
 def get_model_for_agent(agent_name: str) -> str:
     """根据 Agent 名称返回应使用的模型 ID。"""
-    tier = _AGENT_TIER.get(agent_name, TaskTier.SIMPLE)
+    tier, _ = _AGENT_CONFIG.get(agent_name, (TaskTier.SIMPLE, 60))
     return _MODEL_MAP[tier]
+
+
+def get_timeout_for_agent(agent_name: str) -> int:
+    """根据 Agent 名称返回 LLM 调用超时秒数。"""
+    _, timeout = _AGENT_CONFIG.get(agent_name, (TaskTier.SIMPLE, 60))
+    return timeout
 
 
 def create_llm(agent_name: str = "default", temperature: float = 0.3) -> ChatOpenAI:
@@ -46,10 +52,12 @@ def create_llm(agent_name: str = "default", temperature: float = 0.3) -> ChatOpe
         配置好的 ChatOpenAI 实例
     """
     model = get_model_for_agent(agent_name)
+    timeout = get_timeout_for_agent(agent_name)
     return ChatOpenAI(
         model=model,
         api_key=settings.dashscope_api_key,
         base_url=settings.dashscope_base_url,
         temperature=temperature,
         max_tokens=4096,
+        request_timeout=timeout,
     )
