@@ -16,6 +16,7 @@ from src.api.middleware import (
     ExceptionHandlerMiddleware,
 )
 from src.db.engine import init_db, get_engine
+from src.db.crud import TaskCRUD
 from src.utils.logger import setup_logger
 
 
@@ -25,6 +26,8 @@ async def lifespan(app: FastAPI):
     # 启动
     setup_logger()
     await init_db()
+    # 恢复：将上次异常终止的 running 任务标记为 failed
+    await TaskCRUD().mark_stale_running()
     logger.info("FastAPI 应用已启动")
     yield
     # 关闭

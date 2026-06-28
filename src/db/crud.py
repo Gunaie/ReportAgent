@@ -6,7 +6,7 @@ from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 
-from src.db.models import Report, WatchlistItem
+from src.db.models import Report, Task, WatchlistItem
 from src.db.engine import get_session
 
 
@@ -126,6 +126,72 @@ class ReportCRUD:
             if deleted:
                 logger.info(f"研报记录已删除: id={report_id}")
             return deleted
+
+
+class TaskCRUD:
+    """任务状态 CRUD — 持久化管理研究任务生命周期。"""
+
+    async def create(self, task_id: str, topic: str) -> Task:
+        """创建任务记录。"""
+        task = Task(task_id=task_id, topic=topic)
+        async with await get_session() as session:
+            session.add(task)
+            await session.commit()
+            await session.refresh(task)
+        logger.info(f"任务已创建: {task_id} topic={topic}")
+        return task
+
+    async def update(self, task_id: str, **fields) -> Task | None:
+        """部分更新任务字段。"""
+        async with await get_session() as session:
+            result = await session.execute(
+                select(Task).where(Task.task_id == task_id)
+            )
+            task = result.scalar_one_or_none()
+            if task is None:
+                logger.warning(f"任务不存在: {task_id}")
+                return None
+            for key, value in fields.items():
+                if hasattr(task, key):
+                    setattr(task, key, value)
+            task.updated_at = datetime.now()
+            await session.commit()
+            await session.refresh(task)
+        return task
+
+    async def get(self, task_id: str) -> Task | None:
+        """按 task_id 查询。"""
+        async with await get_session() as session:
+            result = await session.execute(
+                select(Task).where(Task.task_id == task_id)
+            )
+            return result.scalar_one_or_none()
+
+    async def list_recent(self, limit: int = 20) -> list[Task]:
+        """查询最近的任务。"""
+        async with await get_session() as session:
+            result = await session.execute(
+                select(Task)
+                .order_by(Task.created_at.desc())
+                .limit(limit)
+            )
+            return list(result.scalars().all())
+
+    async def mark_stale_running(self) -> int:
+        """将所有 running 状态的任务标记为 failed（启动恢复）。"""
+        async with await get_session() as session:
+            result = await session.execute(
+                select(Task).where(Task.status == "running")
+            )
+            stale = result.scalars().all()
+            for task in stale:
+                task.status = "failed"
+                task.error = "服务重启，任务中断"
+                task.updated_at = datetime.now()
+            await session.commit()
+            if stale:
+                logger.info(f"启动恢复: {len(stale)} 个运行中任务已标记为失败")
+            return len(stale)
 
 
 class WatchlistCRUD:

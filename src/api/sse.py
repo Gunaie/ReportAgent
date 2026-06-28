@@ -15,7 +15,7 @@ async def event_generator(task_id: str, request: Request) -> str:
     queue = task_manager.subscribe(task_id)
     try:
         # 先发送当前状态
-        task = task_manager.get(task_id)
+        task = await task_manager.get(task_id)
         if task:
             yield {"event": "status", "data": _task_to_json(task)}
 

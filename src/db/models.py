@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from sqlalchemy import (
-    Column, Integer, String, Text, DateTime,
+    Column, Integer, Float, String, Text, DateTime,
 )
 from sqlalchemy.orm import DeclarativeBase
 
@@ -32,6 +32,26 @@ class Report(Base):
 
     def __repr__(self) -> str:
         return f"<Report(id={self.id}, topic={self.topic}, rating={self.rating})>"
+
+
+class Task(Base):
+    """任务状态表 — 持久化研究任务的生命周期。"""
+
+    __tablename__ = "tasks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    task_id = Column(String(64), unique=True, nullable=False, index=True, comment="任务UUID")
+    topic = Column(String(200), nullable=False, comment="研究主题")
+    status = Column(String(20), nullable=False, default="pending", index=True, comment="pending|running|done|failed")
+    progress = Column(Float, nullable=False, default=0.0, comment="0.0~1.0")
+    current_step = Column(String(100), nullable=False, default="", comment="当前步骤描述")
+    error = Column(Text, nullable=True, comment="错误信息")
+    result_json = Column(Text, nullable=True, comment="完成结果 JSON")
+    created_at = Column(DateTime, default=datetime.now, comment="创建时间")
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, comment="最后更新时间")
+
+    def __repr__(self) -> str:
+        return f"<Task(task_id={self.task_id}, status={self.status})>"
 
 
 class WatchlistItem(Base):

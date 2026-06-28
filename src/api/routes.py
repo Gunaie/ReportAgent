@@ -35,7 +35,7 @@ class ResearchRequest(BaseModel):
 @router.post("/api/research")
 async def research(req: ResearchRequest):
     """提交研究分析任务。"""
-    task = task_manager.create(req.topic)
+    task = await task_manager.create(req.topic)
     bg = asyncio.create_task(_run_research(task.task_id, req.topic))
     bg.add_done_callback(_handle_task_error)
     return {"task_id": task.task_id, "status": "pending"}
@@ -44,7 +44,7 @@ async def research(req: ResearchRequest):
 @router.get("/api/task/{task_id}")
 async def get_task(task_id: str):
     """查询任务状态。"""
-    task = task_manager.get(task_id)
+    task = await task_manager.get(task_id)
     if task is None:
         raise HTTPException(404, "任务不存在")
     return {
@@ -115,7 +115,7 @@ async def _run_research(task_id: str, topic: str):
     """后台执行研究分析 — 通过 astream 获取逐节点进度。"""
     tm = task_manager
     try:
-        tm.update(task_id, status="running", progress=0.05, current_step="搜索中…")
+        await tm.update(task_id, status="running", progress=0.05, current_step="搜索中…")
 
         graph = create_research_graph()
         state = ResearchState(topic=topic)
@@ -127,13 +127,13 @@ async def _run_research(task_id: str, topic: str):
                 result_state.update(node_output)
                 if node_name in _NODE_PROGRESS:
                     prog, desc = _NODE_PROGRESS[node_name]
-                    tm.update(task_id, progress=prog, current_step=desc)
+                    await tm.update(task_id, progress=prog, current_step=desc)
 
         if result_state.get("error"):
-            tm.update(task_id, status="failed", error=result_state["error"])
+            await tm.update(task_id, status="failed", error=result_state["error"])
             return
 
-        tm.update(task_id, progress=0.95, current_step="保存报告…")
+        await tm.update(task_id, progress=0.95, current_step="保存报告…")
 
         crud = ReportCRUD()
         renderer = ReportRenderer()
@@ -161,7 +161,7 @@ async def _run_research(task_id: str, topic: str):
         sources = result_state.get("sources", [])
         source_urls = [s.get("url", "") for s in sources if s.get("url")]
 
-        tm.update(
+        await tm.update(
             task_id, status="done", progress=1.0, current_step="完成",
             result={
                 "topic": topic,
@@ -172,7 +172,7 @@ async def _run_research(task_id: str, topic: str):
         )
     except Exception as e:
         logger.exception(f"研究分析异常: {task_id}")
-        tm.update(task_id, status="failed", error=str(e))
+        await tm.update(task_id, status="failed", error=str(e))
 
 
 def _handle_task_error(fut: asyncio.Task) -> None:
