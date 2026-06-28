@@ -60,8 +60,8 @@ class TestTrendAgent:
             result = await trend_agent(state_with_sources)
 
         assert "trend_analysis" in result
-        assert "分析失败" in result["trend_analysis"]
-        assert "API timeout" in result["trend_analysis"]
+        # 降级消息：使用安全兜底文案
+        assert "暂不可用" in result["trend_analysis"] or "降级" in result["trend_analysis"]
 
 
 # ====== 竞争 Agent ======
@@ -114,7 +114,7 @@ class TestCompetitionAgent:
         with patch("src.agents.competition_agent.create_llm", side_effect=RuntimeError("boom")):
             result = await competition_agent(state_with_sources)
 
-        assert "分析失败" in result["competition_analysis"]
+        assert "暂不可用" in result["competition_analysis"] or "降级" in result["competition_analysis"]
 
 
 # ====== 风险 Agent ======
@@ -166,7 +166,7 @@ class TestRiskAgent:
         with patch("src.agents.risk_research_agent.create_llm", side_effect=RuntimeError("timeout")):
             result = await risk_research_agent(state_with_sources)
 
-        assert "分析失败" in result["risk_analysis"]
+        assert "暂不可用" in result["risk_analysis"] or "降级" in result["risk_analysis"]
 
 
 # ====== 综合 Agent ======

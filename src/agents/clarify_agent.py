@@ -1,10 +1,11 @@
-"""澄清 Agent — 判断研究需求是否足够明确，必要时提出追问（v4-flash）。"""
+"""澄清 Agent — 判断研究需求是否足够明确，必要时提出追问（v4-flash + 重试+降级）。"""
 
 import json
 from langchain_core.messages import HumanMessage
 from loguru import logger
 from src.agents.state import ResearchState
 from src.utils.model_router import create_llm
+from src.utils.retry import safe_call
 
 CLARIFY_PROMPT = """你是一位资深研究顾问。你需要判断用户的研究需求是否足够明确。
 
@@ -55,11 +56,24 @@ async def clarify_agent(state: ResearchState) -> dict:
 
     prompt = CLARIFY_PROMPT.format(topic=topic, history=history_text)
 
-    try:
+    async def _call_llm():
         llm = create_llm("clarify", temperature=0.1)
         resp = await llm.ainvoke([HumanMessage(content=prompt)])
-        raw = str(resp.content).strip()
+        return str(resp.content).strip()
 
+    raw = await safe_call(
+        _call_llm,
+        fallback="",
+        name="澄清Agent",
+        max_attempts=2,
+        base_delay=0.5,
+    )
+
+    if not raw:
+        logger.warning("[澄清Agent] LLM不可用，跳过澄清")
+        return {"need_clarify": False, "clarify_question": "", "refined_topic": topic}
+
+    try:
         # 提取 JSON（可能被 markdown 代码块包裹）
         if "```" in raw:
             raw = raw.split("```")[1]
@@ -76,16 +90,11 @@ async def clarify_agent(state: ResearchState) -> dict:
             f"[澄清Agent] need_clarify={need} "
             f"question={question[:30] if question else 'N/A'}"
         )
-
         return {
             "need_clarify": need,
             "clarify_question": question,
             "refined_topic": refined or topic,
         }
     except (json.JSONDecodeError, Exception) as e:
-        logger.warning(f"[澄清Agent] 解析失败，跳过澄清: {e}")
-        return {
-            "need_clarify": False,
-            "clarify_question": "",
-            "refined_topic": topic,
-        }
+        logger.warning(f"[澄清Agent] JSON解析失败，跳过澄清: {e}")
+        return {"need_clarify": False, "clarify_question": "", "refined_topic": topic}

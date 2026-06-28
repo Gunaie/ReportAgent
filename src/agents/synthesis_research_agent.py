@@ -1,9 +1,10 @@
-"""综合研究 Agent — 汇总所有分析，生成完整研究报告（v4-pro）。"""
+"""综合研究 Agent — 汇总所有分析，生成完整研究报告（v4-pro + 重试+降级）。"""
 
 from langchain_core.messages import HumanMessage
 from loguru import logger
 from src.agents.state import ResearchState
 from src.utils.model_router import create_llm
+from src.utils.retry import safe_call
 
 SYNTHESIS_PROMPT = """你是一位首席研究员。请综合以下三份分析报告，撰写一份完整的研究报告。
 
@@ -67,22 +68,30 @@ async def synthesis_research_agent(state: ResearchState) -> dict:
 
     prompt = SYNTHESIS_PROMPT.format(topic=topic, trend=trend, competition=competition, risk=risk)
 
-    try:
+    async def _call_llm():
         llm = create_llm("synthesis", temperature=0.15)
         resp = await llm.ainvoke([HumanMessage(content=prompt)])
-        synthesis = str(resp.content)
+        return str(resp.content)
 
-        return {
-            "synthesis_analysis": synthesis,
-            "final_report": _assemble_report(state, synthesis),
-        }
-    except Exception as e:
-        logger.error(f"[综合Agent] LLM失败: {e}")
-        error_report = _error_report(state, error=str(e))
-        return {
-            "synthesis_analysis": f"综合汇总失败: {e}",
-            "final_report": error_report,
-        }
+    synthesis = await safe_call(
+        _call_llm,
+        fallback=lambda: (
+            f"## 综合汇总降级\n\n"
+            f"> ⚠️ v4-pro 调用失败，以下为已有分析结果的直接汇总：\n\n"
+            f"### 趋势分析\n{trend}\n\n"
+            f"### 竞争分析\n{competition}\n\n"
+            f"### 风险分析\n{risk}\n\n"
+            f"---\n*本报告为降级模式生成，仅供参考*"
+        ),
+        name="综合Agent",
+        max_attempts=2,
+        base_delay=2.0,
+    )
+
+    return {
+        "synthesis_analysis": synthesis,
+        "final_report": _assemble_report(state, synthesis),
+    }
 
 
 def _error_report(state: ResearchState, error: str = "") -> str:

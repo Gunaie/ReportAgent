@@ -72,7 +72,7 @@ class TestSearchAgent:
                 result = await search_agent(state)
 
         assert result["sources"] == []
-        assert "error" not in result  # 抓取失败不阻塞流程
+        assert not result.get("error")  # 抓取失败不阻塞流程（error 为 None 或不存在）
 
     @pytest.mark.asyncio
     async def test_search_results_included_in_return(self, state):
