@@ -1,5 +1,6 @@
 """报告导出 — Markdown → PDF (weasyprint) / Word (python-docx)。"""
 
+import re
 from pathlib import Path
 from loguru import logger
 
@@ -102,10 +103,8 @@ def _md_to_docx_text(md_text: str):
 
         # 普通段落
         else:
-            # 去掉 markdown 标记（粗体/斜体/链接）
             text = line
-            text = text.replace("**", "").replace("*", "").replace("`", "")
-            import re
+            # 链接 → 纯文本
             text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
             if text.strip():
                 yield ("paragraph", text)
