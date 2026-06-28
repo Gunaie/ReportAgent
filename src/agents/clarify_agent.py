@@ -22,14 +22,17 @@ CLARIFY_PROMPT = """你是一位资深研究顾问。你需要判断用户的研
 
 ## 要求
 - 如果信息充分，设置 need_clarify=false
-- 如果信息不足，设置 need_clarify=true，并提 1 个简短、具体的中文追问（≤20字）
-- 追问应引导用户缩小范围或明确角度
+- 如果信息不足，设置 need_clarify=true
+  - 提 1 个简短、具体的中文追问（≤20字）
+  - 提供 3-4 个具体的可选方向作为快捷选项（每个 ≤8字），引导用户点击
+  - 选项应覆盖用户可能感兴趣的细分方向
 
 ## 输出格式（严格JSON）
-{{"need_clarify": true/false, "clarify_question": "...", "refined_topic": "..."}}
+{{"need_clarify": bool, "clarify_question": "...", "options": ["选项1", "选项2", "选项3"], "refined_topic": "..."}}
 
 - need_clarify: 是否需要追问
 - clarify_question: 追问内容（need_clarify=false 时为空字符串）
+- options: 3-4个可选方向列表（need_clarify=false 时为空数组）
 - refined_topic: 整合历史对话修正后的完整研究主题
 """
 
@@ -71,7 +74,7 @@ async def clarify_agent(state: ResearchState) -> dict:
 
     if not raw:
         logger.warning("[澄清Agent] LLM不可用，跳过澄清")
-        return {"need_clarify": False, "clarify_question": "", "refined_topic": topic}
+        return {"need_clarify": False, "clarify_question": "", "clarify_options": [], "refined_topic": topic}
 
     try:
         # 提取 JSON（可能被 markdown 代码块包裹）
@@ -84,17 +87,25 @@ async def clarify_agent(state: ResearchState) -> dict:
         result = json.loads(raw)
         need = result.get("need_clarify", False)
         question = result.get("clarify_question", "")
+        options = result.get("options", [])
         refined = result.get("refined_topic", topic)
+
+        # 确保 options 是列表且不超过5个
+        if not isinstance(options, list):
+            options = []
+        options = options[:5]
 
         logger.info(
             f"[澄清Agent] need_clarify={need} "
-            f"question={question[:30] if question else 'N/A'}"
+            f"question={question[:30] if question else 'N/A'} "
+            f"options={len(options)}"
         )
         return {
             "need_clarify": need,
             "clarify_question": question,
+            "clarify_options": options,
             "refined_topic": refined or topic,
         }
     except (json.JSONDecodeError, Exception) as e:
         logger.warning(f"[澄清Agent] JSON解析失败，跳过澄清: {e}")
-        return {"need_clarify": False, "clarify_question": "", "refined_topic": topic}
+        return {"need_clarify": False, "clarify_question": "", "clarify_options": [], "refined_topic": topic}

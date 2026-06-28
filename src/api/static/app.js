@@ -2,6 +2,7 @@
 
 let _currentTaskId = null;
 let _busy = false;
+let _isClarifying = false;
 
 const chat = document.getElementById('chatBox');
 const input = document.getElementById('msgInput');
@@ -40,7 +41,7 @@ async function sendMessage() {
     sendBtn.disabled = true;
 
     // 判断是首次研究还是继续对话
-    if (_currentTaskId && _isClarifying()) {
+    if (_currentTaskId && _isClarifying) {
         await continueResearch(text);
     } else {
         await startResearch(text);
@@ -52,14 +53,10 @@ async function sendMessage() {
     input.focus();
 }
 
-function _isClarifying() {
-    const last = lastProgressMsg();
-    return last && last.querySelector('.tag-clarifying');
-}
-
 // ====== 首次研究 ======
 
 async function startResearch(topic) {
+    _isClarifying = false;
     addBubble('user', topic);
 
     try {
@@ -83,6 +80,7 @@ async function startResearch(topic) {
 // ====== 继续对话 ======
 
 async function continueResearch(reply) {
+    _isClarifying = false;
     addBubble('user', reply);
 
     try {
@@ -120,21 +118,35 @@ function subscribeSSE(taskId) {
             es.close();
             removeProgress();
             const q = d.result?.clarify_question || '请补充更多信息';
+            const opts = d.result?.clarify_options || [];
             addBubble('assistant', '🔍 ' + q);
-            // 显示提示
+            // 渲染可点击选项
+            if (opts.length > 0) {
+                const optDiv = addElement('div', 'clarify-opts');
+                opts.forEach(o => {
+                    const chip = addElement('button', 'opt-chip');
+                    chip.textContent = o;
+                    chip.onclick = () => { input.value = o; sendMessage(); };
+                    optDiv.appendChild(chip);
+                });
+                chat.appendChild(optDiv);
+            }
             const tip = addElement('div', 'progress-msg');
-            tip.innerHTML = '<span style="color:var(--accent)">👆 请回复补充信息后发送</span>';
+            tip.innerHTML = '<span style="color:var(--accent)">👆 点击上方选项或输入自定义回复</span>';
             chat.appendChild(tip);
             scrollDown();
+            _isClarifying = true;
             _busy = false;
             sendBtn.disabled = false;
             input.focus();
         } else if (d.status === 'done') {
+            _isClarifying = false;
             done = true;
             es.close();
             removeProgress();
             renderReport(taskId);
         } else if (d.status === 'failed') {
+            _isClarifying = false;
             done = true;
             es.close();
             removeProgress();
@@ -144,6 +156,7 @@ function subscribeSSE(taskId) {
 
     es.addEventListener('error', () => {
         if (!done) {
+            _isClarifying = false;
             es.close();
             removeProgress();
             addBubble('assistant', '❌ 连接断开，请重试');

@@ -259,6 +259,7 @@ async def _run_research(
                     if node_name == "clarify":
                         if result_state.get("need_clarify"):
                             question = result_state.get("clarify_question", "请补充更多信息")
+                            options = result_state.get("clarify_options", [])
                             refined = result_state.get("refined_topic", topic)
                             await conv_crud.add(task_id, "assistant", question)
                             await tm.update(
@@ -268,6 +269,7 @@ async def _run_research(
                                 current_step="等待用户回复",
                                 result={
                                     "clarify_question": question,
+                                    "clarify_options": options,
                                     "refined_topic": refined,
                                 },
                             )
