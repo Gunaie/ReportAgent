@@ -1,0 +1,25 @@
+# Gitleaks 配置 — 密钥扫描规则
+# 参考: https://github.com/gitleaks/gitleaks
+
+title: "ReportAgent Gitleaks Config"
+
+[allowlist]
+  description = "全局允许列表"
+  paths = [
+    # 测试 mock 数据
+    '''tests\/.*''',
+    # 文档
+    '''docs\/.*''',
+  ]
+
+[[rules]]
+  id = "dashscope-api-key"
+  description = "阿里云百炼 API Key"
+  regex = '''sk-[a-f0-9]{32}'''
+  tags = ["api-key", "dashscope"]
+
+[[rules]]
+  id = "generic-api-key"
+  description = "通用 API Key 模式"
+  regex = '''(?i)(api[_-]?key|apikey|secret|token|password|auth)[\s]*[=:][\s]*['"]?[a-zA-Z0-9_\-\.]{20,}['"]?'''
+  tags = ["api-key"]

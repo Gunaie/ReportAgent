@@ -1,0 +1,64 @@
+# ruff 配置 — Python 代码质量和风格检查
+# 参考: https://docs.astral.sh/ruff/
+
+target-version = "py312"
+
+line-length = 100
+
+# 排除目录
+exclude = [
+    ".venv",
+    ".git",
+    "__pycache__",
+    "dist",
+    "build",
+    "data",
+    "outputs",
+    "logs",
+]
+
+# ====== 规则集 ======
+lint.select = [
+    # 基础规则
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes (未使用导入/变量)
+    "I",   # isort (导入排序)
+
+    # 代码质量
+    "N",   # pep8-naming (命名规范)
+    "UP",  # pyupgrade (Python 升级语法)
+    "B",   # flake8-bugbear (常见bug)
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify (代码简化)
+    "TCH", # flake8-type-checking (类型检查导入)
+
+    # 安全
+    "S",   # flake8-bandit (安全检查)
+
+    # Pydantic
+    "PYI", # flake8-pyi (类型注解)
+
+    # 异步
+    "ASYNC", # flake8-async
+]
+
+lint.ignore = [
+    "S101",   # 允许使用 assert (测试中常用)
+    "S311",   # 允许标准伪随机数 (非密码学场景)
+    "E501",   # 行长度由 formatter 处理
+    "B008",   # FastAPI 依赖注入中允许函数调用作为默认参数
+    "B904",   # raise from 规范
+]
+
+# ====== isort ======
+[lint.isort]
+combine-as-imports = true
+force-sort-within-sections = true
+known-first-party = ["src"]
+
+# ====== Formatter ======
+[format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true

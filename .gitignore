@@ -1,0 +1,41 @@
+# ====== Python ======
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# ====== 虚拟环境 ======
+.venv/
+venv/
+env/
+
+# ====== 环境变量 (含 API Key) ======
+.env
+*.local
+
+# ====== 运行时产出 ======
+logs/
+outputs/
+data/
+*.db
+
+# ====== 测试覆盖 ======
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+
+# ====== Claude Code ======
+.claude/settings.json
+
+# ====== IDE ======
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ====== OS ======
+Thumbs.db
+.DS_Store
